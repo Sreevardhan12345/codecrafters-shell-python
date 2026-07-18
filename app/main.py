@@ -11,7 +11,7 @@ def exit_shell():
     sys.exit(0)
 
 
-def echo_shell(command):
+def parse_quoted_args(command):
     cmdLength = len(command)
     index = 0
     quote_char = None
@@ -36,7 +36,11 @@ def echo_shell(command):
         index += 1
     if var:
         args.append(var)
+    return args
 
+
+def echo_shell(command):
+    args = parse_quoted_args(command)
     for arg in args:
         sys.stdout.write(arg + " ")
     sys.stdout.write("\n")
@@ -102,7 +106,7 @@ def commandProcessor(command):
     else:
         executable = find_executable(cmdLets[0])
         if executable:
-            subprocess.run(cmdLets)
+            subprocess.run(parse_quoted_args(command))
         else:
             not_found_handler(cmdLets[0])
 
