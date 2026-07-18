@@ -22,6 +22,9 @@ def find_executable(command):
 
 def cd_shell(args):
     if len(args) > 0:
+        if args[0] == "~":
+            home_directory = os.path.expanduser("~")
+            os.chdir(home_directory)
         try:
             os.chdir(args[0])
         except FileNotFoundError:
