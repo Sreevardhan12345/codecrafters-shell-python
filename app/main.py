@@ -1,4 +1,4 @@
-from asyncio import subprocess
+import subprocess
 import sys, os
 
 BUILTINS = ["echo", "type", "exit"]
