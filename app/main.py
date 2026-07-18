@@ -25,10 +25,11 @@ def cd_shell(args):
     if len(args) > 0:
         if args[0] == "~":
             os.chdir(HOME)
-        try:
-            os.chdir(args[0])
-        except FileNotFoundError:
-            sys.stdout.write(f"cd: {args[0]}: No such file or directory\n")
+        else:
+            try:
+                os.chdir(args[0])
+            except FileNotFoundError:
+                sys.stdout.write(f"cd: {args[0]}: No such file or directory\n")
     else:
         sys.stdout.write("cd: missing operand\n")
 def type_shell(args):
