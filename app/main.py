@@ -5,6 +5,8 @@ def main():
     # TODO: Uncomment the code below to pass the first stage
     while( True):
         command = input("$ ")
+        if command == "exit":
+            sys.exit(0)
         sys.stdout.write(f"{command}: command not found\n")
     pass
 
