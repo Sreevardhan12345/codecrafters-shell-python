@@ -1,26 +1,48 @@
-import sys
+import sys, os
 
+BUILTINS = ["echo", "type", "exit"]
+PATH = os.environ.get("PATH", "").split(os.pathsep)
+
+def exit_shell():
+    sys.exit(0)
+
+def echo_shell(args):
+    sys.stdout.write(" ".join(args) + "\n")
+
+def find_executable(command):
+    for directory in PATH:
+        executable_path = os.path.join(directory, command)
+        if os.path.isfile(executable_path) and os.access(executable_path, os.X_OK):
+            return executable_path
+    return None
+
+def type_shell(args):
+    if len(args) > 0:
+        if args[0] in BUILTINS:
+            sys.stdout.write(f"{args[0]} is a shell builtin\n")
+        else:
+            executable = find_executable(args[0])
+            if executable:
+                sys.stdout.write(f"{args[0]} is {executable}\n")
+            else:
+                sys.stdout.write(f"{args[0]}: not found\n")
+    else:
+        sys.stdout.write("type: missing operand\n")
+
+def not_found_handler(command):
+    sys.stdout.write(f"{command}: command not found\n")
 
 def main():
-    # TODO: Uncomment the code below to pass the first stage
     while( True):
         command = input("$ ")
         if command == "exit":
-            sys.exit(0)
+            exit_shell()
         elif command.startswith("echo "):
-            sys.stdout.write( command[5:] + "\n")
+            echo_shell(command[5:].split())
         elif command.startswith("type "):
-            cmdLets = command.split()
-            if len(cmdLets) > 1:
-                if cmdLets[1] in ["echo", "type", "exit"]:
-                    sys.stdout.write(f"{cmdLets[1]} is a shell builtin\n")
-                else:
-                    sys.stdout.write(f"{cmdLets[1]}: not found\n")
-            else:
-                sys.stdout.write("type: missing operand\n")
+            type_shell(command[5:].split())
         else:
-            sys.stdout.write(f"{command}: command not found\n")
-    pass
+            not_found_handler(command)
 
 
 if __name__ == "__main__":
