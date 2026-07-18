@@ -53,7 +53,7 @@ def parse_args(command):
 
 
 def echo_shell(command):
-    args = parse_quoted_args(command)
+    args = parse_args(command)
     for arg in args:
         sys.stdout.write(arg + " ")
     sys.stdout.write("\n")
