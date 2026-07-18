@@ -9,7 +9,7 @@ def main():
             sys.exit(0)
         elif command.startswith("echo "):
             sys.stdout.write( command[5:] + "\n")
-        elif command == "type":
+        elif command.startswith("type "):
             cmdLets = command.split()
             if len(cmdLets) > 1:
                 if cmdLets[1] in ["echo", "type", "exit"]:
