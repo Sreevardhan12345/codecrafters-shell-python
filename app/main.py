@@ -15,23 +15,47 @@ def parse_args(command):
     args = []
     current = []
     quote_char = None
+    quote_literal = False
     escaped = False
+    i = 0
+    length = len(command)
 
-    for char in command:
+    while i < length:
+        char = command[i]
+
         if escaped:
-            current.append(char)
+            if quote_char and quote_literal and char == quote_char:
+                current.append(char)
+                quote_char = None
+                quote_literal = False
+            else:
+                current.append(char)
             escaped = False
+            i += 1
             continue
 
         if char == "\\":
+            if quote_char is None and not current and i + 1 < length and command[i + 1] in ("'", '"'):
+                quote_char = command[i + 1]
+                quote_literal = True
+                current.append(command[i + 1])
+                i += 2
+                continue
             escaped = True
+            i += 1
             continue
 
         if quote_char:
             if char == quote_char:
-                quote_char = None
+                if quote_literal:
+                    current.append(char)
+                    quote_char = None
+                    quote_literal = False
+                else:
+                    quote_char = None
             else:
                 current.append(char)
+            i += 1
             continue
 
         if char in ("'", '"'):
@@ -42,6 +66,8 @@ def parse_args(command):
                 current = []
         else:
             current.append(char)
+
+        i += 1
 
     if escaped:
         current.append("\\")
