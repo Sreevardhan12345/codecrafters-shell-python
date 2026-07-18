@@ -43,9 +43,10 @@ def main():
         elif command.startswith("type "):
             type_shell(command[5:].split())
         else:
-            executable = find_executable(command)
+            cmdLets = command.split()
+            executable = find_executable(cmdLets[0])
             if executable:
-                subprocess.run([executable] + command.split()[1:])
+                subprocess.run([executable] + cmdLets[1:])
             else:
                 not_found_handler(command)
 
