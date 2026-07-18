@@ -14,7 +14,6 @@ def main():
             if len(cmdLets) > 1:
                 if cmdLets[1] in ["echo", "type", "exit"]:
                     sys.stdout.write(f"{cmdLets[1]} is a shell builtin\n")
-                sys.stdout.write(f"{cmdLets[1]} is /usr/bin/{cmdLets[1]}\n")
             else:
                 sys.stdout.write("type: missing operand\n")
         else:
