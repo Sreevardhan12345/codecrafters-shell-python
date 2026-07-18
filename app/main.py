@@ -46,7 +46,7 @@ def main():
             cmdLets = command.split()
             executable = find_executable(cmdLets[0])
             if executable:
-                subprocess.run(cmdLets[0] + cmdLets[1:])
+                subprocess.run(cmdLets)
             else:
                 not_found_handler(command)
 
