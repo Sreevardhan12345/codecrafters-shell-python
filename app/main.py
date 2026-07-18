@@ -20,6 +20,14 @@ def find_executable(command):
             return executable_path
     return None
 
+def cd_shell(args):
+    if len(args) > 0:
+        try:
+            os.chdir(args[0])
+        except FileNotFoundError:
+            sys.stdout.write(f"cd: {args[0]}: No such file or directory\n")
+    else:
+        sys.stdout.write("cd: missing operand\n")
 def type_shell(args):
     if len(args) > 0:
         if args[0] in BUILTINS:
@@ -36,24 +44,31 @@ def type_shell(args):
 def not_found_handler(command):
     sys.stdout.write(f"{command}: command not found\n")
 
+def commandProcessor(command):
+    cmdLets =command.split()
+    if len(cmdLets) == 0:
+        return
+    elif cmdLets[0] == "exit":
+        exit_shell()
+    elif cmdLets[0] == "echo":
+        echo_shell(cmdLets[1:])
+    elif cmdLets[0] == "type":
+        type_shell(cmdLets[1:])
+    elif cmdLets[0] == "pwd":
+        pwd_shell()
+    elif cmdLets[0] == "cd":
+        cd_shell(cmdLets[1:])
+    else:
+        executable = find_executable(cmdLets[0])
+        if executable:
+            subprocess.run(cmdLets)
+        else:
+            not_found_handler(cmdLets[0])
+
 def main():
     while( True):
         command = input("$ ")
-        if command == "exit":
-            exit_shell()
-        elif command.startswith("echo "):
-            echo_shell(command[5:].split())
-        elif command.startswith("type "):
-            type_shell(command[5:].split())
-        elif command.startswith("pwd"):
-            pwd_shell()
-        else:
-            cmdLets = command.split()
-            executable = find_executable(cmdLets[0])
-            if executable:
-                subprocess.run(cmdLets)
-            else:
-                not_found_handler(command)
+        commandProcessor(command)
 
 
 if __name__ == "__main__":
