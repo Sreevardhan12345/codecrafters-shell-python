@@ -10,6 +10,9 @@ def exit_shell():
 def echo_shell(args):
     sys.stdout.write(" ".join(args) + "\n")
 
+def pwd_shell():
+    sys.stdout.write(os.getcwd() + "\n")
+
 def find_executable(command):
     for directory in PATH:
         executable_path = os.path.join(directory, command)
@@ -42,6 +45,8 @@ def main():
             echo_shell(command[5:].split())
         elif command.startswith("type "):
             type_shell(command[5:].split())
+        elif command.startswith("pwd"):
+            pwd_shell()
         else:
             cmdLets = command.split()
             executable = find_executable(cmdLets[0])
