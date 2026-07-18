@@ -1,18 +1,50 @@
+import os
 import subprocess
-import sys, os
+import sys
 
 BUILTINS = ["echo", "type", "exit", "pwd", "cd"]
 PATH = os.environ.get("PATH", "").split(os.pathsep)
 HOME = os.environ.get("HOME", "")
 
+
 def exit_shell():
     sys.exit(0)
 
-def echo_shell(args):
-    sys.stdout.write(" ".join(args) + "\n")
+
+def echo_shell(command):
+    cmdLength = len(command)
+    index = 0
+    quote_char = None
+    var = ""
+    args = []
+    while index < cmdLength:
+        char = command[index]
+        if quote_char:
+            if char == quote_char:
+                quote_char = None
+            else:
+                var += char
+        else:
+            if char in ("'", '"'):
+                quote_char = char
+            elif char == " ":
+                if var:
+                    args.append(var)
+                    var = ""
+            else:
+                var += char
+        index += 1
+    if var:
+        args.append(var)
+
+    for arg in args:
+        sys.stdout.write(arg + " ")
+    sys.stdout.write("\n")
+
 
 def pwd_shell():
     sys.stdout.write(os.getcwd() + "\n")
+
 
 def find_executable(command):
     for directory in PATH:
@@ -20,6 +52,7 @@ def find_executable(command):
         if os.path.isfile(executable_path) and os.access(executable_path, os.X_OK):
             return executable_path
     return None
+
 
 def cd_shell(args):
     if len(args) > 0:
@@ -32,6 +65,8 @@ def cd_shell(args):
                 sys.stdout.write(f"cd: {args[0]}: No such file or directory\n")
     else:
         sys.stdout.write("cd: missing operand\n")
+
+
 def type_shell(args):
     if len(args) > 0:
         if args[0] in BUILTINS:
@@ -45,17 +80,19 @@ def type_shell(args):
     else:
         sys.stdout.write("type: missing operand\n")
 
+
 def not_found_handler(command):
     sys.stdout.write(f"{command}: command not found\n")
 
+
 def commandProcessor(command):
-    cmdLets =command.split()
+    cmdLets = command.split()
     if len(cmdLets) == 0:
         return
     elif cmdLets[0] == "exit":
         exit_shell()
     elif cmdLets[0] == "echo":
-        echo_shell(cmdLets[1:])
+        echo_shell(command[5:])
     elif cmdLets[0] == "type":
         type_shell(cmdLets[1:])
     elif cmdLets[0] == "pwd":
@@ -69,8 +106,9 @@ def commandProcessor(command):
         else:
             not_found_handler(cmdLets[0])
 
+
 def main():
-    while( True):
+    while True:
         command = input("$ ")
         commandProcessor(command)
 
