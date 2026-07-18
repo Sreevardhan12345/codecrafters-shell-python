@@ -7,6 +7,8 @@ def main():
         command = input("$ ")
         if command == "exit":
             sys.exit(0)
+        elif command.startswith("echo "):
+            sys.stdout.write(command + "\n")
         sys.stdout.write(f"{command}: command not found\n")
     pass
 
