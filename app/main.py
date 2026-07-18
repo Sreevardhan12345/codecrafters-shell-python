@@ -1,7 +1,7 @@
 import subprocess
 import sys, os
 
-BUILTINS = ["echo", "type", "exit"]
+BUILTINS = ["echo", "type", "exit", "pwd"]
 PATH = os.environ.get("PATH", "").split(os.pathsep)
 
 def exit_shell():
