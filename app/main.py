@@ -1,3 +1,4 @@
+from asyncio import subprocess
 import sys, os
 
 BUILTINS = ["echo", "type", "exit"]
@@ -42,7 +43,11 @@ def main():
         elif command.startswith("type "):
             type_shell(command[5:].split())
         else:
-            not_found_handler(command)
+            executable = find_executable(command)
+            if executable:
+                subprocess.run([executable] + command.split()[1:])
+            else:
+                not_found_handler(command)
 
 
 if __name__ == "__main__":
