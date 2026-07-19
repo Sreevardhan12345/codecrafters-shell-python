@@ -2,6 +2,8 @@ import os
 import subprocess
 import sys
 
+from .utils import parse_command
+
 BUILTINS = {"echo", "type", "exit", "pwd", "cd"}
 PATH = os.environ.get("PATH", "").split(os.pathsep)
 HOME = os.environ.get("HOME", "")
@@ -11,78 +13,8 @@ def exit_shell():
     sys.exit(0)
 
 
-def parse_args(command):
-    args = []
-    current = []
-    quote_char = None
-    quote_literal = False
-    escaped = False
-    i = 0
-    length = len(command)
-
-    while i < length:
-        char = command[i]
-
-        if escaped:
-            if quote_char and quote_literal and char == quote_char:
-                current.append(char)
-                quote_char = None
-                quote_literal = False
-            else:
-                current.append(char)
-            escaped = False
-            i += 1
-            continue
-
-        if char == "\\":
-            if quote_char is None and not current and i + 1 < length and command[i + 1] in ("'", '"'):
-                quote_char = command[i + 1]
-                quote_literal = True
-                current.append(command[i + 1])
-                i += 2
-                continue
-            escaped = True
-            i += 1
-            continue
-
-        if quote_char:
-            if char == quote_char:
-                if quote_literal:
-                    current.append(char)
-                    quote_char = None
-                    quote_literal = False
-                else:
-                    quote_char = None
-            else:
-                current.append(char)
-            i += 1
-            continue
-
-        if char in ("'", '"'):
-            quote_char = char
-        elif char.isspace():
-            if current:
-                args.append("".join(current))
-                current = []
-        else:
-            current.append(char)
-
-        i += 1
-
-    if escaped:
-        current.append("\\")
-
-    if current:
-        args.append("".join(current))
-
-    return args
-
-
-def echo_shell(command):
-    args = parse_args(command)
-    for arg in args:
-        sys.stdout.write(arg + " ")
-    sys.stdout.write("\n")
+def echo_shell(args):
+    sys.stdout.write(" ".join(args) + "\n")
 
 
 def pwd_shell():
@@ -135,7 +67,7 @@ def run_external_command(args):
 
 
 def process_command(command):
-    args = parse_args(command)
+    args = parse_command(command)
     if not args:
         return
 
