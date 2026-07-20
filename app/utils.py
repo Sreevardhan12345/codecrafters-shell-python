@@ -27,10 +27,22 @@ def parse_command(command : str) -> list:
         if command[index] in ['"', "'"]:
             quote_char = command[index]
             index += 1
-            while index < length and command[index] != quote_char:
-                arg += command[index]
-                index += 1
-
+            if quote_char == "'":
+                while index < length and command[index] != quote_char:
+                    arg += command[index]
+                    index += 1
+            else:
+                while index < length :
+                    if command[index] == "\\":
+                        arg += command[index+1]
+                        index += 2
+                        continue
+                    if command[index] != quote_char:
+                        arg += command[index]
+                        index += 1
+                    else:
+                        break
+                
         index+=1
     if arg:
         result.append(arg)
