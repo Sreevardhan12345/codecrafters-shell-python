@@ -1,9 +1,8 @@
 import os
 import sys
 
-from .ExternalHandler import EXTERNAL
 from common.registry import Registry
-from common.systemInfo import HOME
+from common.systemInfo import HOME, PATH
 from common.result import Result
 
 BUILTINS = Registry("built-ins")
@@ -16,13 +15,12 @@ def exit_shell(args):
 
 @BUILTINS.register("ECHO")
 def echo_shell(args):
-    return Result(0, stdout=" ".join(args)+"\n")
+    return Result(0, stdout=" ".join(args) + "\n")
 
 
 @BUILTINS.register("PWD")
 def pwd_shell(args):
-    return Result(0, stdout=os.getcwd()+"\n")
-
+    return Result(0, stdout=os.getcwd() + "\n")
 
 
 @BUILTINS.register("CD")
@@ -46,7 +44,13 @@ def type_shell(args):
     if target.upper() in BUILTINS:
         return Result(0, stdout=f"{target} is a shell builtin\n")
 
-    executable = EXTERNAL.get("FIND")(target)
+    executable = None
+    for directory in PATH:
+        test_path = os.path.join(directory, target)
+        if os.path.isfile(test_path) and os.access(test_path, os.X_OK):
+            executable = test_path
+            break
+
     if executable:
         return Result(0, stdout=f"{target} is {executable}\n")
     else:
