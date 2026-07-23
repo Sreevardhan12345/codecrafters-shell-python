@@ -4,6 +4,7 @@ import sys
 from .ExternalHandler import EXTERNAL
 from common.registry import Registry
 from common.systemInfo import HOME
+from common.result import Result
 
 BUILTINS = Registry("built-ins")
 
@@ -15,52 +16,38 @@ def exit_shell(args):
 
 @BUILTINS.register("ECHO")
 def echo_shell(args):
-    return(" ".join(args)+"\n")
+    return Result(0, stdout=" ".join(args)+"\n")
 
 
 @BUILTINS.register("PWD")
 def pwd_shell(args):
-    return(os.getcwd()+"\n")
+    return Result(0, stdout=os.getcwd()+"\n")
 
 
 
 @BUILTINS.register("CD")
 def cd_shell(args):
     if not args:
-        return("cd: missing operand")
+        return Result(1, stderr="cd: missing operand\n")
 
     target = HOME if args[0] == "~" else args[0]
     try:
         os.chdir(target)
     except FileNotFoundError:
-        return(f"cd: {args[0]}: No such file or directory\n")
+        return Result(1, stderr=f"cd: {args[0]}: No such file or directory\n")
 
 
 @BUILTINS.register("TYPE")
 def type_shell(args):
     if not args:
-        return("type: missing operand")
+        return Result(1, stderr="type: missing operand\n")
 
     target = args[0]
     if target.upper() in BUILTINS:
-        return(f"{target} is a shell builtin\n")
+        return Result(0, stdout=f"{target} is a shell builtin\n")
 
     executable = EXTERNAL.get("FIND")(target)
     if executable:
-        return(f"{target} is {executable}\n")
+        return Result(0, stdout=f"{target} is {executable}\n")
     else:
-        return(f"{target}: not found\n")
-    
-# @BUILTINS.register("CAT")
-# def cat_shell(args):
-#     if not args:
-#         return("cat: missing operand")
-
-#     output = ""
-#     for filename in args:
-#         try:
-#             with open(filename, "r") as f:
-#                 output += f.read()
-#         except FileNotFoundError:
-#             output += f"cat: {filename}: No such file or directory"
-#     return output
+        return Result(1, stderr=f"{target}: not found\n")

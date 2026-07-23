@@ -1,6 +1,6 @@
 import os
 import subprocess
-import sys, io
+import sys
 from pathlib import Path
 
 # When running `python app/main.py` directly, make sure project root
@@ -10,6 +10,7 @@ if __package__ is None:
 
 from common.systemInfo import PATH
 from common.parser import Parser
+from common.result import Result
 
 
 def find_executable(command):
@@ -32,23 +33,52 @@ def process_command(command):
     command = Parser(command)
     if command._cmdLet == "EXIT":
         sys.exit(0)
-
+        
+        
+        
+    if command:
+        handler = None
+        if command.isBuiltIn():
+            handler = command.getBuiltInHandler()
+        elif command.isExternal():
+            handler = command.getExternalHandler()
+        else:
+            not_found_handler(command._cmdLet)
+            return None
+        
+        if handler:
+            output = handler()
+            if output:
+                if output.returncode != 0:
+                    if command.isErrorRedirected():
+                        open(command.errArgs[0], "w").write(output.stderr.decode())
+                        return None
+                    sys.stdout.write(output.stderr.decode())
+        
     if command:
         if command.isBuiltIn():
             handler = command.getBuiltInHandler()
             if handler:
                 output = handler()
-                if command.isOutputRedirected():
-                    open(command.outArgs[0], "w").write(output)
-                    return None
-                return output
-            # command.write_output(output)
+                if output:
+                    if command.isOutputRedirected():
+                        open(command.outArgs[0], "w").write(output)
+                        return None
+                    else:
+                        return output
+                else:
+                    if command.isErrorRedirected():
+                        open(command.errArgs[0], "w").write(output)
+                        return None
                 
         elif command.isExternal():
             handler = command.getExternalHandler()
             if handler:
                 output = handler()
                 if output.returncode != 0:
+                    if command.isErrorRedirected():
+                        open(command.errArgs[0], "w").write(output.stderr.decode())
+                        return None
                     sys.stdout.write(output.stderr.decode())
                 if command.isOutputRedirected():
                     open(command.outArgs[0], "w").write(output.stdout.decode())

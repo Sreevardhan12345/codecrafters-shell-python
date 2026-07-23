@@ -14,7 +14,9 @@ class Parser:
         self._cmdType = COMMAND_TYPE.INVALID
         self.inArgs = []
         self.outArgs = []
+        self.errArgs = []
         self._setArgs()
+        breakpoint()
 
     def __str__(self):
         return f"{self._cmdType.name} - {self._cmdLet} - object"
@@ -90,21 +92,21 @@ class Parser:
             index += 1
         if arg:
             result.append(arg)
-            
-        return result[0],result[1:]
+        if result:
+            return result[0], result[1:]
 
     def _setArgs(self):
         self._cmdLet, args = self._parse(self._command)
         self._parseCommandType()
-        isOut = False
+        destRef = self.inArgs
         for arg in args:
-            if ">" in arg:
-                isOut = True
+            if arg in "1>":
+                destRef = self.outArgs
                 continue
-            if isOut:
-                self.outArgs.append(arg)
-            else:
-                self.inArgs.append(arg)
+            if arg in "2>":
+                destRef = self.errArgs
+                continue
+            destRef.append(arg)
                 
     def isBuiltIn(self):
         return self._cmdType == COMMAND_TYPE.BUILTIN
@@ -125,12 +127,5 @@ class Parser:
     def isOutputRedirected(self):
         return len(self.outArgs) > 0
     
-    def write_output(self, output):
-        if self.isOutputRedirected():
-            with open(self.outArgs[0], "w") as f:
-                f.write(output)
-        else:
-            sys.stdout.write(output)
-            sys.stdout.flush()
-    
-
+    def isErrorRedirected(self):
+        return len(self.errArgs) > 0
