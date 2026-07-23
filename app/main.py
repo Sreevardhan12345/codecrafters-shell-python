@@ -1,24 +1,15 @@
 import os
 import subprocess
-import sys
+import sys, io
+from pathlib import Path
 
-from .utils import parse_command
+# When running `python app/main.py` directly, make sure project root
+# is on sys.path so top-level imports like `common` resolve.
+if __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-BUILTINS = {"echo", "type", "exit", "pwd", "cd"}
-PATH = os.environ.get("PATH", "").split(os.pathsep)
-HOME = os.environ.get("HOME", "")
-
-
-def exit_shell():
-    sys.exit(0)
-
-
-def echo_shell(args):
-    sys.stdout.write(" ".join(args) + "\n")
-
-
-def pwd_shell():
-    sys.stdout.write(os.getcwd() + "\n")
+from common.systemInfo import PATH
+from common.parser import Parser
 
 
 def find_executable(command):
@@ -27,35 +18,6 @@ def find_executable(command):
         if os.path.isfile(executable_path) and os.access(executable_path, os.X_OK):
             return executable_path
     return None
-
-
-def cd_shell(args):
-    if not args:
-        sys.stdout.write("cd: missing operand\n")
-        return
-
-    target = HOME if args[0] == "~" else args[0]
-    try:
-        os.chdir(target)
-    except FileNotFoundError:
-        sys.stdout.write(f"cd: {args[0]}: No such file or directory\n")
-
-
-def type_shell(args):
-    if not args:
-        sys.stdout.write("type: missing operand\n")
-        return
-
-    target = args[0]
-    if target in BUILTINS:
-        sys.stdout.write(f"{target} is a shell builtin\n")
-        return
-
-    executable = find_executable(target)
-    if executable:
-        sys.stdout.write(f"{target} is {executable}\n")
-    else:
-        sys.stdout.write(f"{target}: not found\n")
 
 
 def not_found_handler(command):
@@ -67,35 +29,47 @@ def run_external_command(args):
 
 
 def process_command(command):
-    args = parse_command(command)
-    if not args:
-        return
+    command = Parser(command)
+    if command._cmdLet == "EXIT":
+        sys.exit(0)
 
-    cmd = args[0]
-    rest = args[1:]
-
-    if cmd == "exit":
-        exit_shell()
-    elif cmd == "echo":
-        echo_shell(rest)
-    elif cmd == "type":
-        type_shell(rest)
-    elif cmd == "pwd":
-        pwd_shell()
-    elif cmd == "cd":
-        cd_shell(rest)
-    else:
-        if find_executable(cmd):
-            run_external_command(args)
+    if command:
+        if command.isBuiltIn():
+            handler = command.getBuiltInHandler()
+            if handler:
+                output = handler()
+                if command.isOutputRedirected():
+                    open(command.outArgs[0], "w").write(output)
+                    return None
+                return output
+            # command.write_output(output)
+                
+        elif command.isExternal():
+            handler = command.getExternalHandler()
+            if handler:
+                output = handler()
+                if output.returncode != 0:
+                    sys.stdout.write(output.stderr.decode())
+                if command.isOutputRedirected():
+                    open(command.outArgs[0], "w").write(output.stdout.decode())
+                    return None
+                else:
+                    return output.stdout.decode()
         else:
-            not_found_handler(cmd)
+            not_found_handler(command._cmdLet)
+    else:
+        not_found_handler(command._cmdLet)
+        
+    
 
 
 def main():
     try:
         while True:
             command = input("$ ")
-            process_command(command)
+            commandOutput = process_command(command)
+            if commandOutput:
+                sys.stdout.write(commandOutput)
     except KeyboardInterrupt:
         sys.stdout.write("\n")
     except EOFError:
