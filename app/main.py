@@ -1,3 +1,4 @@
+from functools import partial
 import os
 import subprocess
 import sys
@@ -22,84 +23,63 @@ def find_executable(command):
 
 
 def not_found_handler(command):
-    sys.stdout.write(f"{command}: command not found\n")
+    return Result(1, stderr=f"{command}: command not found\n")  
 
 
 def run_external_command(args):
-    subprocess.run(args)
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)
+    result = Result(result.returncode, stdout=result.stdout, stderr=result.stderr)
+    return result
 
 
 def process_command(command):
     command = Parser(command)
     if command._cmdLet == "EXIT":
         sys.exit(0)
-        
-        
-        
+
     if command:
         handler = None
+        
+        if command.isOutputRedirected():
+            open(command.outArgs[0], "w").close()
+        if command.isErrorRedirected():
+            open(command.errArgs[0], "w").close()
+            
         if command.isBuiltIn():
             handler = command.getBuiltInHandler()
         elif command.isExternal():
             handler = command.getExternalHandler()
         else:
-            not_found_handler(command._cmdLet)
-            return None
-        
+            handler = partial(not_found_handler, command._cmdLet)
+
         if handler:
             output = handler()
             if output:
-                if output.returncode != 0:
-                    if command.isErrorRedirected():
-                        open(command.errArgs[0], "w").write(output.stderr.decode())
-                        return None
-                    sys.stdout.write(output.stderr.decode())
-        
-    if command:
-        if command.isBuiltIn():
-            handler = command.getBuiltInHandler()
-            if handler:
-                output = handler()
-                if output:
-                    if command.isOutputRedirected():
-                        open(command.outArgs[0], "w").write(output)
-                        return None
-                    else:
-                        return output
-                else:
-                    if command.isErrorRedirected():
-                        open(command.errArgs[0], "w").write(output)
-                        return None
-                
-        elif command.isExternal():
-            handler = command.getExternalHandler()
-            if handler:
-                output = handler()
-                if output.returncode != 0:
-                    if command.isErrorRedirected():
-                        open(command.errArgs[0], "w").write(output.stderr.decode())
-                        return None
-                    sys.stdout.write(output.stderr.decode())
-                if command.isOutputRedirected():
-                    open(command.outArgs[0], "w").write(output.stdout.decode())
-                    return None
-                else:
-                    return output.stdout.decode()
-        else:
-            not_found_handler(command._cmdLet)
+                if output.stdout:
+                    output_message = output.stdout if isinstance(output.stdout, str) else output.stdout.decode()
+                    if output_message:
+                        if command.isOutputRedirected():
+                            open(command.outArgs[0], "w").write(output_message)
+                        else:
+                            sys.stdout.write(output_message)
+                if output.stderr:
+                    error_message = output.stderr if isinstance(output.stderr, str) else output.stderr.decode()
+                    if error_message :
+                        if command.isErrorRedirected():
+                            open(command.errArgs[0], "w").write(error_message)
+                        else:
+                            sys.stderr.write(error_message)
     else:
-        not_found_handler(command._cmdLet)
-        
-    
+        sys.stderr.write(f"{command._cmdLet}: command not found\n")
 
 
 def main():
     try:
         while True:
             command = input("$ ")
-            commandOutput = process_command(command)
-            if commandOutput:
-                sys.stdout.write(commandOutput)
+            if command.strip() == "":
+                continue
+            process_command(command)
     except KeyboardInterrupt:
         sys.stdout.write("\n")
     except EOFError:

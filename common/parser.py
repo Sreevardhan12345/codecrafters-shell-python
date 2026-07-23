@@ -16,7 +16,6 @@ class Parser:
         self.outArgs = []
         self.errArgs = []
         self._setArgs()
-        breakpoint()
 
     def __str__(self):
         return f"{self._cmdType.name} - {self._cmdLet} - object"
