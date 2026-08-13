@@ -1,5 +1,6 @@
 """Interactive entry point for the shell."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,22 +10,53 @@ if __package__ is None:
 
 from commandHandlers.BuiltinHandler import BUILTINS
 from common.re_parser import Parser
+from common.systemInfo import path_directories
 
 
 PROMPT = "$ "
 
 
 def _complete_builtin(text: str, state: int) -> str | None:
-    """Return a unique builtin completion for the word at the cursor.
+    """Return a unique builtin or PATH executable completion.
 
     Readline calls the function repeatedly with increasing state values. A
-    trailing space is intentional: after a unique command match, the next Tab
-    should complete an argument rather than keep extending the command name.
+    A trailing space is intentional after any unique command match: the next
+    Tab should complete an argument rather than extend the command name.
     """
-    matches = [name.lower() for name in BUILTINS if name.lower().startswith(text.lower())]
+    matches = _command_completions(text)
     if len(matches) != 1 or state != 0:
         return None
-    return matches[0] + " "
+    return matches[0]
+
+
+def _command_completions(prefix: str) -> list[str]:
+    """Find unique builtin and executable names beginning with prefix.
+
+    PATH may contain missing, inaccessible, or non-directory entries. Each
+    entry is isolated so a filesystem error never breaks interactive input.
+    """
+    normalized_prefix = prefix.lower()
+    matches = {
+        name.lower() + " "
+        for name in BUILTINS
+        if name.lower().startswith(normalized_prefix)
+    }
+
+    for directory in path_directories():
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if (
+                        entry.name.lower().startswith(normalized_prefix)
+                        and entry.is_file()
+                        and os.access(entry.path, os.X_OK)
+                    ):
+                        matches.add(entry.name + " ")
+        except OSError:
+            # A PATH entry can disappear or be unreadable after process start.
+            continue
+
+    return sorted(matches)
 
 
 def _configure_completion() -> None:
