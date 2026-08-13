@@ -1,30 +1,37 @@
+"""A tiny registry used for builtin command registration."""
+
+from collections.abc import Callable, Iterator
+from typing import TypeVar
+
+
+T = TypeVar("T")
+
+
 class Registry:
-    """A reusable name -to-object registry."""
-    
-    def __init__(self, name):
+    """Map normalized names to callables without exposing mutable storage."""
+
+    def __init__(self, name: str) -> None:
         self.name = name
-        self._registry = {}
-        
-    def register(self, key):
-        def decorator(obj):
-            if key in self._registry:
-                raise KeyError(
-                    f"{key!r} already registered in {self.name!r}"
-                )
-            self._registry[key] = obj
-            return obj
+        self._entries: dict[str, T] = {}
+
+    def register(self, key: str) -> Callable[[T], T]:
+        """Register an item, failing early when a name is registered twice."""
+        normalized_key = key.upper()
+
+        def decorator(item: T) -> T:
+            if normalized_key in self._entries:
+                raise KeyError(f"{normalized_key!r} already registered in {self.name!r}")
+            self._entries[normalized_key] = item
+            return item
+
         return decorator
-    
-    def get(self, key):
-        if key not in self._registry:
-            raise KeyError(
-                f"{key!r} not found in {self.name !r}."
-                f"Available : {list(self._registry)}"
-            )
-        return self._registry[key]
-    
-    def __contains__(self, item):
-        return item in self._registry
-    
-    def keys(self):
-        return self._registry.keys()
+
+    def get(self, key: str) -> T:
+        """Return an item by name."""
+        return self._entries[key.upper()]
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and key.upper() in self._entries
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._entries)

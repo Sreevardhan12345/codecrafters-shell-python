@@ -1,92 +1,60 @@
-# from functools import partial
-# import os
-# import subprocess
+"""Interactive entry point for the shell."""
+
 import sys
 from pathlib import Path
 
-# When running `python app/main.py` directly, make sure project root
-# is on sys.path so top-level imports like `common` resolve.
+# Support direct execution as well as module execution.
 if __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# from common.systemInfo import PATH
-# from common.parser import Parser
-# from common.result import Result
-
-
-# def find_executable(command):
-#     for directory in PATH:
-#         executable_path = os.path.join(directory, command)
-#         if os.path.isfile(executable_path) and os.access(executable_path, os.X_OK):
-#             return executable_path
-#     return None
-
-
-# def not_found_handler(command):
-#     return Result(1, stderr=f"{command}: command not found\n")  
-
-
-# def run_external_command(args):
-#     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)
-#     result = Result(result.returncode, stdout=result.stdout, stderr=result.stderr)
-#     return result
-
-
-# def process_command(command):
-#     command = Parser(command)
-#     if command._cmdLet == "EXIT":
-#         sys.exit(0)
-
-#     if command:
-#         handler = None
-        
-#         if command.isOutputRedirected():
-#             open(command.outArgs[0], "w").close()
-#         if command.isErrorRedirected():
-#             open(command.errArgs[0], "w").close()
-            
-#         if command.isBuiltIn():
-#             handler = command.getBuiltInHandler()
-#         elif command.isExternal():
-#             handler = command.getExternalHandler()
-#         else:
-#             handler = partial(not_found_handler, command._cmdLet)
-
-#         if handler:
-#             output = handler()
-#             if output:
-#                 if output.stdout:
-#                     output_message = output.stdout if isinstance(output.stdout, str) else output.stdout.decode()
-#                     if output_message:
-#                         if command.isOutputRedirected():
-#                             open(command.outArgs[0], "w").write(output_message)
-#                         else:
-#                             sys.stdout.write(output_message)
-#                 if output.stderr:
-#                     error_message = output.stderr if isinstance(output.stderr, str) else output.stderr.decode()
-#                     if error_message :
-#                         if command.isErrorRedirected():
-#                             open(command.errArgs[0], "w").write(error_message)
-#                         else:
-#                             sys.stderr.write(error_message)
-#     else:
-#         sys.stderr.write(f"{command._cmdLet}: command not found\n")
-
-
-
+from commandHandlers.BuiltinHandler import BUILTINS
 from common.re_parser import Parser
 
-def main():
+
+PROMPT = "$ "
+
+
+def _complete_builtin(text: str, state: int) -> str | None:
+    """Return a unique builtin completion for the word at the cursor.
+
+    Readline calls the function repeatedly with increasing state values. A
+    trailing space is intentional: after a unique command match, the next Tab
+    should complete an argument rather than keep extending the command name.
+    """
+    matches = [name.lower() for name in BUILTINS if name.lower().startswith(text.lower())]
+    if len(matches) != 1 or state != 0:
+        return None
+    return matches[0] + " "
+
+
+def _configure_completion() -> None:
+    """Enable Tab completion"""
     try:
-        while True:
-            command = input("$ ")
-            if command.strip() == "":
-                continue
+        import readline
+    except ImportError:
+        # The non-interactive fallback still works on platforms without readline.
+        return
+
+    readline.set_completer(_complete_builtin)
+    readline.parse_and_bind("tab: complete")
+
+
+def main() -> None:
+    """Run the REPL until EOF, Ctrl-C, or the exit builtin."""
+    _configure_completion()
+    while True:
+        try:
+            command = input(PROMPT)
+        except EOFError:
+            sys.stdout.write("\n")
+            return
+        except KeyboardInterrupt:
+            sys.stdout.write("\n")
+            continue
+
+        # Whitespace-only input has no command and should not invoke parsing.
+        if command.strip():
             Parser(command)
-    except KeyboardInterrupt:
-        sys.stdout.write("\n")
-    except EOFError:
-        sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

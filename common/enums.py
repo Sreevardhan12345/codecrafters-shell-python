@@ -1,6 +1,14 @@
+"""Legacy command classifications kept for import compatibility."""
+
 from enum import Enum
 
-class COMMAND_TYPE(Enum):
+
+class CommandType(Enum):
+    """Classify a command after lookup."""
+
     INVALID = 0
     BUILTIN = 1
-    OTHER = 2
+    EXTERNAL = 2
+
+
+COMMAND_TYPE = CommandType

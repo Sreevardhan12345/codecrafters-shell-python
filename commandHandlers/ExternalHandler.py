@@ -1,24 +1,36 @@
-import os, sys, subprocess
-from common.registry import Registry
-from common.systemInfo import PATH
+"""External command discovery and execution."""
 
-EXTERNAL = Registry("External Commands")
+import os
+import subprocess
 
-
-@EXTERNAL.register("NOT FOUND")
-def not_found_handler(command):
-    sys.stdout.write(f"{command}: command not found")
+from common.result import Result
+from common.systemInfo import path_directories
 
 
-@EXTERNAL.register("FIND")
-def find_executable(command):
-    for directory in PATH:
-        executable_path = os.path.join(directory, command)
-        if os.path.isfile(executable_path) and os.access(executable_path, os.X_OK):
-            return executable_path
+def find_executable(command: str) -> str | None:
+    """Find an executable in PATH without invoking a shell.
+
+    Joining paths directly is important: commands containing spaces must remain
+    one executable name rather than being split by a shell.
+    """
+    for directory in path_directories():
+        candidate = os.path.join(directory, command)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
     return None
 
 
-@EXTERNAL.register("RUN")
-def run_external_command(args):
-    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run_external_command(command: str, args: list[str]) -> Result:
+    """Run one already-tokenized executable and capture its output."""
+    executable = find_executable(command)
+    if executable is None:
+        return Result(1, stderr=f"{command}: command not found\n")
+
+    completed = subprocess.run(
+        [command, *args],
+        executable=executable,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return Result(completed.returncode, completed.stdout, completed.stderr)

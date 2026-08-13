@@ -1,57 +1,65 @@
+"""Builtin commands and their registration."""
+
 import os
-import sys
+from collections.abc import Callable
 
+from commandHandlers.ExternalHandler import find_executable
 from common.registry import Registry
-from common.systemInfo import HOME, PATH
 from common.result import Result
+from common.systemInfo import home_directory
 
-BUILTINS = Registry("built-ins")
+
+Builtin = Callable[[list[str]], Result]
+BUILTINS: Registry[Builtin] = Registry("built-ins")
 
 
 @BUILTINS.register("EXIT")
-def exit_shell(args):
-    sys.exit(0)
+def exit_shell(_: list[str]) -> Result:
+    """Exit the interactive shell."""
+    raise SystemExit(0)
 
 
 @BUILTINS.register("ECHO")
-def echo_shell(args):
+def echo_shell(args: list[str]) -> Result:
+    """Print arguments separated by one space."""
     return Result(0, stdout=" ".join(args) + "\n")
 
 
 @BUILTINS.register("PWD")
-def pwd_shell(args):
+def pwd_shell(_: list[str]) -> Result:
+    """Print the current working directory."""
     return Result(0, stdout=os.getcwd() + "\n")
 
 
 @BUILTINS.register("CD")
-def cd_shell(args):
+def cd_shell(args: list[str]) -> Result:
+    """Change directory; a standalone tilde means HOME."""
     if not args:
         return Result(1, stderr="cd: missing operand\n")
 
-    target = HOME if args[0] == "~" else args[0]
+    target = home_directory() if args[0] == "~" else args[0]
     try:
         os.chdir(target)
     except FileNotFoundError:
         return Result(1, stderr=f"cd: {args[0]}: No such file or directory\n")
+    except NotADirectoryError:
+        return Result(1, stderr=f"cd: {args[0]}: Not a directory\n")
+    except PermissionError:
+        return Result(1, stderr=f"cd: {args[0]}: Permission denied\n")
+    return Result(0)
 
 
 @BUILTINS.register("TYPE")
-def type_shell(args):
+def type_shell(args: list[str]) -> Result:
+    """Describe whether a name resolves to a builtin or PATH executable."""
     if not args:
         return Result(1, stderr="type: missing operand\n")
 
     target = args[0]
-    if target.upper() in BUILTINS:
+    if target in BUILTINS:
         return Result(0, stdout=f"{target} is a shell builtin\n")
 
-    executable = None
-    for directory in PATH:
-        test_path = os.path.join(directory, target)
-        if os.path.isfile(test_path) and os.access(test_path, os.X_OK):
-            executable = test_path
-            break
-
+    executable = find_executable(target)
     if executable:
         return Result(0, stdout=f"{target} is {executable}\n")
-    else:
-        return Result(1, stderr=f"{target}: not found\n")
+    return Result(1, stderr=f"{target}: not found\n")

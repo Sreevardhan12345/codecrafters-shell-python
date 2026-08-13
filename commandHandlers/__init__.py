@@ -1,1 +1,1 @@
-from .BuiltinHandler import BUILTINS
+"""Command implementations for builtins and external programs."""

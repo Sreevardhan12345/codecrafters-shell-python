@@ -1,216 +1,211 @@
-import re, os, subprocess, sys
+"""Lexer, parser, and command dispatcher for the small shell.
 
-from commandHandlers.BuiltinHandler import BUILTINS as BUILTIN_COMMANDS
+This module intentionally does not use a host shell.  It converts the command
+line into arguments itself, which keeps quoted executable names and literal
+backslashes portable and prevents shell-injection side effects.
+"""
 
+from __future__ import annotations
 
-class Result:
-    def __init__(self, returncode, output=None, error=None):
-        self.returncode = returncode
-        self.output = output
-        self.error = error
+import sys
+from dataclasses import dataclass
+from typing import Iterator
 
-
-TOKEN_REGEX = re.compile(
-    r"""
-(?P<SPACE>\s+)
-
-|(?P<APPEND_ERR>2>>)
-|(?P<REDIR_ERR>2>)
-|(?P<APPEND>>>|1>>)
-|(?P<HEREDOC><<)
-|(?P<REDIR_OUT>>|1>)
-|(?P<REDIR_IN><)
-
-|(?P<PIPE>\|)
-|(?P<AND>&&)
-|(?P<OR>\|\|)
-|(?P<SEMI>;)
-|(?P<BACKGROUND>&)
-
-|(?P<DQSTRING>"(?:\\.|[^"\\])*")
-|(?P<SQSTRING>'[^']*')
-
-|(?P<WORD>(?:\\.|[^\s<>&|;'"])+)
-""",
-    re.VERBOSE,
-)
+from commandHandlers.BuiltinHandler import BUILTINS
+from commandHandlers.ExternalHandler import run_external_command
+from common.result import Result
 
 
-def tokenize(command):
-    pos = 0
+WORD = "WORD"
+COMMAND_SEPARATORS = {"|", "&&", "||", ";", "&"}
+REDIRECTIONS = {"1>", ">", "1>>", ">>", "2>", "2>>"}
 
-    while pos < len(command):
-        m = TOKEN_REGEX.match(command, pos)
 
-        if not m:
-            raise SyntaxError(command[pos:])
+@dataclass(frozen=True, slots=True)
+class Token:
+    """A lexical token with its shell-normalized value."""
 
-        if m.lastgroup != "SPACE":
-            yield m.lastgroup, m.group()
+    kind: str
+    value: str
 
-        pos = m.end()
+
+def tokenize(command: str) -> Iterator[tuple[str, str]]:
+    """Yield tokens while applying shell quote and escape rules.
+
+    Single quotes preserve every character literally. Double quotes and
+    unquoted words consume a backslash plus its following character as one
+    literal character. A trailing backslash remains literal rather than being
+    silently dropped.
+    """
+    position = 0
+    word: list[str] = []
+
+    def flush_word() -> Token | None:
+        if not word:
+            return None
+        token = Token(WORD, "".join(word))
+        word.clear()
+        return token
+
+    while position < len(command):
+        char = command[position]
+
+        if char.isspace():
+            token = flush_word()
+            if token:
+                yield token.kind, token.value
+            position += 1
+            continue
+
+        redirection = next(
+            (operator for operator in ("2>>", "1>>", "2>", "1>", ">>", ">")
+             if command.startswith(operator, position)),
+            None,
+        )
+        if redirection:
+            token = flush_word()
+            if token:
+                yield token.kind, token.value
+            yield redirection, redirection
+            position += len(redirection)
+            continue
+
+        separator = next(
+            (operator for operator in ("&&", "||", "|", ";", "&")
+             if command.startswith(operator, position)),
+            None,
+        )
+        if separator:
+            token = flush_word()
+            if token:
+                yield token.kind, token.value
+            yield separator, separator
+            position += len(separator)
+            continue
+
+        if char == "'":
+            # A backslash cannot escape a quote inside single quotes.
+            closing_quote = command.find("'", position + 1)
+            if closing_quote == -1:
+                raise SyntaxError("unterminated single quote")
+            word.append(command[position + 1:closing_quote])
+            position = closing_quote + 1
+            continue
+
+        if char == '"':
+            position += 1
+            while position < len(command) and command[position] != '"':
+                if command[position] == "\\" and position + 1 < len(command):
+                    word.append(command[position + 1])
+                    position += 2
+                else:
+                    word.append(command[position])
+                    position += 1
+            if position == len(command):
+                raise SyntaxError("unterminated double quote")
+            position += 1
+            continue
+
+        if char == "\\" and position + 1 < len(command):
+            word.append(command[position + 1])
+            position += 2
+            continue
+
+        word.append(char)
+        position += 1
+
+    token = flush_word()
+    if token:
+        yield token.kind, token.value
 
 
 class Parser:
-    def __init__(self, command):
+    """Parse and immediately execute a command line."""
+
+    def __init__(self, command: str) -> None:
         self._command = command
-        self._tokenize()
-        self._pipeline = []
-        self._build_pipeline()
-        self._exec_pipeline()
+        self._tokens = [Token(kind, value) for kind, value in tokenize(command)]
+        self._commands = self._split_commands()
+        self._execute_commands()
 
-    def _tokenize(self):
-        processed = []
-        word_parts = []
-        pos = 0
+    def _split_commands(self) -> list[list[Token]]:
+        """Split a token stream at command separators.
 
-        def flush_word_parts():
-            if not word_parts:
-                return
-
-            if len(word_parts) == 1:
-                processed.append(word_parts[0])
+        Operators are retained only as boundaries for now; the shell's current
+        stage runs each resulting command in order.
+        """
+        commands: list[list[Token]] = []
+        current: list[Token] = []
+        for token in self._tokens:
+            if token.kind in COMMAND_SEPARATORS:
+                if not current:
+                    raise SyntaxError(f"unexpected operator: {token.value}")
+                commands.append(current)
+                current = []
             else:
-                value = ""
-                for token_type, token_value in word_parts:
-                    if token_type == "DQSTRING":
-                        value += re.sub(r"\\(.)", r"\1", token_value[1:-1])
-                    elif token_type == "SQSTRING":
-                        value += token_value[1:-1]
-                    else:
-                        value += re.sub(r"\\(.)", r"\1", token_value)
-                processed.append(("COMPOUND", value))
-            word_parts.clear()
+                current.append(token)
+        if current:
+            commands.append(current)
+        return commands
 
-        while pos < len(self._command):
-            match = TOKEN_REGEX.match(self._command, pos)
-            if not match:
-                raise SyntaxError(self._command[pos:])
+    def _execute_commands(self) -> None:
+        """Run parsed commands and route their captured streams."""
+        for tokens in self._commands:
+            self._execute_one(tokens)
 
-            token_type = match.lastgroup
-            token_value = match.group()
-            if token_type == "SPACE":
-                flush_word_parts()
-            elif token_type in ["WORD", "DQSTRING", "SQSTRING"]:
-                word_parts.append((token_type, token_value))
-            else:
-                flush_word_parts()
-                processed.append((token_type, token_value))
-            pos = match.end()
+    def _execute_one(self, tokens: list[Token]) -> None:
+        """Dispatch one command, separating arguments from redirection targets."""
+        words: list[str] = []
+        stdout_target: Token | None = None
+        stderr_target: Token | None = None
+        append_stdout = False
+        append_stderr = False
+        position = 0
 
-        flush_word_parts()
-        self._tokens = processed
-
-    def _build_pipeline(self):
-        current_cmd = []
-        for token_type, token_value in self._tokens:
-            if token_type in ["PIPE", "AND", "OR", "SEMI", "BACKGROUND"]:
-                if current_cmd:
-                    self._pipeline.append((current_cmd, token_type))
-                    current_cmd = []
+        while position < len(tokens):
+            token = tokens[position]
+            if token.kind in REDIRECTIONS:
+                if position + 1 == len(tokens) or tokens[position + 1].kind != WORD:
+                    raise SyntaxError(f"redirection {token.value} requires a target")
+                target = tokens[position + 1]
+                if token.kind.startswith("2"):
+                    stderr_target, append_stderr = target, token.kind == "2>>"
                 else:
-                    raise SyntaxError(
-                        f"Unexpected {token_value} at position {self._tokens.index((token_type, token_value))}"
-                    )
+                    stdout_target, append_stdout = target, token.kind in {"1>>", ">>"}
+                position += 2
             else:
-                current_cmd.append((token_type, token_value))
+                words.append(token.value)
+                position += 1
 
-        if current_cmd:
-            self._pipeline.append((current_cmd, None))
+        if not words:
+            raise SyntaxError("missing command")
 
-    def _exec_pipeline(self):
+        result = self._dispatch(words[0], words[1:])
+        self._write_stream(result.stdout, stdout_target, append_stdout, sys.stdout)
+        self._write_stream(result.stderr, stderr_target, append_stderr, sys.stderr)
 
-        def process_double_quoted_string(s):
-            # Remove the surrounding double quotes
-            s = s[1:-1]
-            # Replace escaped characters
-            return re.sub(r"\\(.)", r"\1", s)
+    @staticmethod
+    def _dispatch(command: str, args: list[str]) -> Result:
+        """Run a builtin when registered, otherwise resolve an external command."""
+        if command in BUILTINS:
+            return BUILTINS.get(command)(args)
+        return run_external_command(command, args)
 
-        def process_single_quoted_string(s):
-            # Remove the surrounding single quotes
-            return s[1:-1]
+    @staticmethod
+    def _write_stream(
+        content: str,
+        target: Token | None,
+        append: bool,
+        stream: object,
+    ) -> None:
+        """Write output to a redirection target or to the supplied text stream."""
+        if target is None:
+            if content:
+                stream.write(content)  # type: ignore[attr-defined]
+            return
 
-        for task, operator in self._pipeline:
-            command_type, command = task.pop(0)
-            if command_type == "DQSTRING":
-                command = process_double_quoted_string(command)
-            elif command_type == "SQSTRING":
-                command = process_single_quoted_string(command)
-            # removing first space after cmdLet
-            input_args = []
-            token_type, token_value = task.pop(0) if task else (None, None)
-            while token_type in ["WORD", "DQSTRING", "SQSTRING", "COMPOUND"]:
-                if token_type == "DQSTRING":
-                    input_args.append(process_double_quoted_string(token_value))
-                elif token_type == "SQSTRING":
-                    input_args.append(process_single_quoted_string(token_value))
-                elif token_type == "COMPOUND":
-                    input_args.append(token_value)
-                else:
-                    input_args.append(re.sub(r"\\(.)", r"\1", token_value))
-                token_type, token_value = task.pop(0) if task else (None, None)
-
-            result = self.process_task(command, input_args)
-            outputProcessed = False
-            errorProcessed = False
-            while token_type in [
-                "REDIR_OUT",
-                "REDIR_ERR",
-                "APPEND",
-                "APPEND_ERR",
-                "HEREDOC",
-            ]:
-                redir_type = token_type
-                _, redir_target = task.pop(0)
-                if redir_type == "REDIR_OUT":
-                    outputProcessed = True
-                    self.redirect_output(result.output, redir_target)
-                elif redir_type == "REDIR_ERR":
-                    errorProcessed = True
-                    self.redirect_output(result.error, redir_target)
-                elif redir_type == "APPEND":
-                    outputProcessed = True
-                    self.append_output(result.output, redir_target)
-                elif redir_type == "APPEND_ERR":
-                    errorProcessed = True
-                    self.append_output(result.error, redir_target)
-                token_type, token_value = task.pop(0) if task else (None, None)
-
-            if not outputProcessed:
-                sys.stdout.write(result.output if result.output else "")
-            if not errorProcessed:
-                sys.stderr.write(result.error if result.error else "")
-
-    def redirect_output(self, output, target):
-        with open(target, "w") as f:
-            if output:
-                f.write(output)
-
-    def append_output(self, output, target):
-        with open(target, "a") as f:
-            if output:
-                f.write(output)
-
-    def process_task(self, command, args):
-        if command.upper() in BUILTIN_COMMANDS:
-            handler = BUILTIN_COMMANDS.get(command.upper())
-            result = handler(args)
-            if result is None:
-                return Result(0)
-            return Result(result.returncode, output=result.stdout, error=result.stderr)
-        else:
-            for directory in os.environ.get("PATH", "").split(os.pathsep):
-                executable_path = os.path.join(directory, command)
-                if os.path.isfile(executable_path) and os.access(
-                    executable_path, os.X_OK
-                ):
-                    result = subprocess.run(
-                        [command] + args,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                    )
-                    return Result(
-                        result.returncode, output=result.stdout, error=result.stderr
-                    )
-            return Result(1, error=f"{command}: command not found\n")
+        # Redirection creates or truncates its target even when the associated
+        # command writes no bytes, such as echo text with stderr redirected.
+        mode = "a" if append else "w"
+        with open(target.value, mode, encoding="utf-8") as destination:
+            destination.write(content)
