@@ -1,6 +1,7 @@
 """Interactive entry point for the shell."""
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -8,29 +9,63 @@ from pathlib import Path
 if __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from commandHandlers.BuiltinHandler import BUILTINS
+from commandHandlers.BuiltinHandler import BUILTINS, COMPLETERS
 from common.re_parser import Parser
 from common.systemInfo import path_directories
 
 
 PROMPT = "$ "
+_completion_matches: list[str] = []
 
 
 def _complete_builtin(text: str, state: int) -> str | None:
     """Return command or filename candidates for readline.
 
     Readline calls the function repeatedly with increasing state values. A
-    single candidate carries a trailing space so the next Tab completes an
-    argument. At the command position, candidates come from builtins and PATH;
-    after whitespace, candidates are regular files in the current directory.
+    A candidate carries a trailing space so the next Tab completes an argument.
+    At the command position, candidates come from builtins and PATH. For a
+    command with a registered completer, its script supplies argument
+    candidates; otherwise regular files are used.
     """
     import readline
 
-    buffer = readline.get_line_buffer()
-    matches = _filename_completions(text) if buffer[: readline.get_begidx()].strip() else _command_completions(text)
-    if state >= len(matches):
+    global _completion_matches
+
+    if state == 0:
+        buffer = readline.get_line_buffer()
+        preceding_text = buffer[: readline.get_begidx()]
+        command_words = preceding_text.split()
+        command = command_words[0] if command_words else None
+
+        if command in COMPLETERS:
+            _completion_matches = _completer_completions(COMPLETERS[command])
+            # A broken completer should not disable the shell's normal Tab
+            # behavior for that command.
+            if not _completion_matches:
+                _completion_matches = _filename_completions(text)
+        elif preceding_text.strip():
+            _completion_matches = _filename_completions(text)
+        else:
+            _completion_matches = _command_completions(text)
+
+    if state >= len(_completion_matches):
         return None
-    return matches[state]
+    return _completion_matches[state]
+
+
+def _completer_completions(script: str) -> list[str]:
+    """Run a registered completer and turn its stdout lines into candidates."""
+    try:
+        completed = subprocess.run(
+            [script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+
+    return [f"{line} " for line in completed.stdout.splitlines() if line]
 
 
 def _command_completions(prefix: str) -> list[str]:
