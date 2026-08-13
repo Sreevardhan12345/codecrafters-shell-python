@@ -68,4 +68,7 @@ def type_shell(args: list[str]) -> Result:
 @BUILTINS.register("COMPLETE")
 def complete_shell(args: list[str]) -> Result:
     """ This is a placeholder for the complete command, which is not implemented in this shell. """
+
+    if args[0] == "-p":
+        return Result(0, stderr=f"complete: {args[1]}: no completion specification\n")
     return Result(0)
