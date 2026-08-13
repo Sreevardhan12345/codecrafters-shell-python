@@ -17,15 +17,17 @@ PROMPT = "$ "
 
 
 def _complete_builtin(text: str, state: int) -> str | None:
-    """Return builtin and PATH executable candidates for readline.
+    """Return command or filename candidates for readline.
 
     Readline calls the function repeatedly with increasing state values. A
     single candidate carries a trailing space so the next Tab completes an
-    argument. Multiple candidates are returned one by one: GNU readline rings
-    the bell on the first Tab and prints its sorted candidate list on the
-    second Tab, then redraws the original prefix.
+    argument. At the command position, candidates come from builtins and PATH;
+    after whitespace, candidates are regular files in the current directory.
     """
-    matches = _command_completions(text)
+    import readline
+
+    buffer = readline.get_line_buffer()
+    matches = _filename_completions(text) if buffer[: readline.get_begidx()].strip() else _command_completions(text)
     if state >= len(matches):
         return None
     return matches[state]
@@ -61,6 +63,25 @@ def _command_completions(prefix: str) -> list[str]:
     return sorted(matches)
 
 
+def _filename_completions(prefix: str) -> list[str]:
+    """Return matching files in the current directory.
+
+    The readline configuration treats whitespace as the only word separator,
+    so a filename containing punctuation such as a hyphen remains one
+    completion target. Filesystem errors are ignored so a deleted or unreadable
+    working directory does not break the interactive shell.
+    """
+    try:
+        matches = [
+            entry.name + " "
+            for entry in os.scandir(".")
+            if entry.name.startswith(prefix) and entry.is_file()
+        ]
+    except OSError:
+        return []
+    return sorted(matches)
+
+
 def _configure_completion() -> None:
     """Enable Tab completion"""
     try:
@@ -70,6 +91,9 @@ def _configure_completion() -> None:
         return
 
     readline.set_completer(_complete_builtin)
+    # Filename prefixes can contain punctuation; whitespace is the only
+    # separator for this shell's simple argument completion.
+    readline.set_completer_delims(" \t\n")
     readline.parse_and_bind("tab: complete")
 
 
