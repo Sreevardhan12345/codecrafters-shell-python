@@ -17,16 +17,18 @@ PROMPT = "$ "
 
 
 def _complete_builtin(text: str, state: int) -> str | None:
-    """Return a unique builtin or PATH executable completion.
+    """Return builtin and PATH executable candidates for readline.
 
     Readline calls the function repeatedly with increasing state values. A
-    A trailing space is intentional after any unique command match: the next
-    Tab should complete an argument rather than extend the command name.
+    single candidate carries a trailing space so the next Tab completes an
+    argument. Multiple candidates are returned one by one: GNU readline rings
+    the bell on the first Tab and prints its sorted candidate list on the
+    second Tab, then redraws the original prefix.
     """
     matches = _command_completions(text)
-    if len(matches) != 1 or state != 0:
+    if state >= len(matches):
         return None
-    return matches[0]
+    return matches[state]
 
 
 def _command_completions(prefix: str) -> list[str]:
