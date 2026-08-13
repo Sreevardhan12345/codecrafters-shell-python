@@ -11,6 +11,10 @@ from common.systemInfo import home_directory
 
 Builtin = Callable[[list[str]], Result]
 BUILTINS: Registry[Builtin] = Registry("built-ins")
+# Completion specifications are shell state, rather than builtins themselves.
+# Keep the script exactly as parsed and render it only when queried so that
+# `complete -p` has one canonical representation.
+COMPLETERS: dict[str, str] = {}
 
 
 @BUILTINS.register("EXIT")
@@ -67,8 +71,17 @@ def type_shell(args: list[str]) -> Result:
 
 @BUILTINS.register("COMPLETE")
 def complete_shell(args: list[str]) -> Result:
-    """ This is a placeholder for the complete command, which is not implemented in this shell. """
+    """Register completer scripts and print their normalized specifications."""
 
-    if args[0] == "-p":
-        return Result(0, stderr=f"complete: {args[1]}: no completion specification\n")
+    if len(args) >= 3 and args[0] == "-C":
+        script, command = args[1], args[2]
+        COMPLETERS[command] = script
+        return Result(0)
+
+    if len(args) >= 2 and args[0] == "-p":
+        command = args[1]
+        script = COMPLETERS.get(command)
+        if script is not None:
+            return Result(0, stdout=f"complete -C '{script}' {command}\n")
+        return Result(0, stderr=f"complete: {command}: no completion specification\n")
     return Result(0)
