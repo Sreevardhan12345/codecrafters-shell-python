@@ -28,9 +28,9 @@ TOKEN_REGEX = re.compile(
 |(?P<BACKGROUND>&)
 
 |(?P<DQSTRING>"(?:\\.|[^"\\])*")
-|(?P<SQSTRING>'(?:\\.|[^'])*')
+|(?P<SQSTRING>'[^']*')
 
-|(?P<WORD>[^\s<>&|;]+)
+|(?P<WORD>(?:\\.|[^\s<>&|;'"])+)
 """,
     re.VERBOSE,
 )
@@ -54,10 +54,52 @@ def tokenize(command):
 class Parser:
     def __init__(self, command):
         self._command = command
-        self._tokens = list(tokenize(command))
+        self._tokenize()
         self._pipeline = []
         self._build_pipeline()
         self._exec_pipeline()
+
+    def _tokenize(self):
+        processed = []
+        word_parts = []
+        pos = 0
+
+        def flush_word_parts():
+            if not word_parts:
+                return
+
+            if len(word_parts) == 1:
+                processed.append(word_parts[0])
+            else:
+                value = ""
+                for token_type, token_value in word_parts:
+                    if token_type == "DQSTRING":
+                        value += re.sub(r"\\(.)", r"\1", token_value[1:-1])
+                    elif token_type == "SQSTRING":
+                        value += token_value[1:-1]
+                    else:
+                        value += re.sub(r"\\(.)", r"\1", token_value)
+                processed.append(("COMPOUND", value))
+            word_parts.clear()
+
+        while pos < len(self._command):
+            match = TOKEN_REGEX.match(self._command, pos)
+            if not match:
+                raise SyntaxError(self._command[pos:])
+
+            token_type = match.lastgroup
+            token_value = match.group()
+            if token_type == "SPACE":
+                flush_word_parts()
+            elif token_type in ["WORD", "DQSTRING", "SQSTRING"]:
+                word_parts.append((token_type, token_value))
+            else:
+                flush_word_parts()
+                processed.append((token_type, token_value))
+            pos = match.end()
+
+        flush_word_parts()
+        self._tokens = processed
 
     def _build_pipeline(self):
         current_cmd = []
@@ -82,22 +124,30 @@ class Parser:
             # Remove the surrounding double quotes
             s = s[1:-1]
             # Replace escaped characters
-            return re.sub(r'\\(.)', r'\1', s)
+            return re.sub(r"\\(.)", r"\1", s)
+
         def process_single_quoted_string(s):
             # Remove the surrounding single quotes
-            s = s[1:-1]
-            # Replace escaped characters
-            return re.sub(r'\\(.)', r'\1', s)
+            return s[1:-1]
+
         for task, operator in self._pipeline:
-            _, command = task.pop(0)
+            command_type, command = task.pop(0)
+            if command_type == "DQSTRING":
+                command = process_double_quoted_string(command)
+            elif command_type == "SQSTRING":
+                command = process_single_quoted_string(command)
+            # removing first space after cmdLet
             input_args = []
             token_type, token_value = task.pop(0) if task else (None, None)
-            while token_type in ["WORD", "DQSTRING", "SQSTRING"]:
+            while token_type in ["WORD", "DQSTRING", "SQSTRING", "COMPOUND"]:
                 if token_type == "DQSTRING":
-                    input_args.append(process_double_quoted_string(token_value))    
+                    input_args.append(process_double_quoted_string(token_value))
                 elif token_type == "SQSTRING":
                     input_args.append(process_single_quoted_string(token_value))
-                input_args.append(token_value)
+                elif token_type == "COMPOUND":
+                    input_args.append(token_value)
+                else:
+                    input_args.append(re.sub(r"\\(.)", r"\1", token_value))
                 token_type, token_value = task.pop(0) if task else (None, None)
 
             result = self.process_task(command, input_args)
