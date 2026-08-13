@@ -78,9 +78,10 @@ def _filename_completions(prefix: str) -> list[str]:
 
     try:
         matches = [
-            path_prefix + entry.name + " "
+            path_prefix + entry.name + ("/" if entry.is_dir() else " ")
             for entry in os.scandir(directory)
-            if entry.name.startswith(filename_prefix) and entry.is_file()
+            if entry.name.startswith(filename_prefix)
+            and (entry.is_file() or entry.is_dir())
         ]
     except OSError:
         return []
