@@ -63,3 +63,9 @@ def type_shell(args: list[str]) -> Result:
     if executable:
         return Result(0, stdout=f"{target} is {executable}\n")
     return Result(1, stderr=f"{target}: not found\n")
+
+
+@BUILTINS.register("COMPLETE")
+def complete_shell(args: list[str]) -> Result:
+    """ This is a placeholder for the complete command, which is not implemented in this shell. """
+    return Result(0)
