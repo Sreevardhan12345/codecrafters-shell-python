@@ -64,18 +64,23 @@ def _command_completions(prefix: str) -> list[str]:
 
 
 def _filename_completions(prefix: str) -> list[str]:
-    """Return matching files in the current directory.
+    """Return matching files for a current-directory or path-qualified prefix.
 
     The readline configuration treats whitespace as the only word separator,
     so a filename containing punctuation such as a hyphen remains one
-    completion target. Filesystem errors are ignored so a deleted or unreadable
-    working directory does not break the interactive shell.
+    completion target. When a slash is present, the final slash separates the
+    directory to scan from the filename prefix to match. Filesystem errors are
+    ignored so an absent or unreadable directory does not break the shell.
     """
+    directory_prefix, separator, filename_prefix = prefix.rpartition("/")
+    directory = directory_prefix or ("/" if separator else ".")
+    path_prefix = f"{directory_prefix}/" if separator else ""
+
     try:
         matches = [
-            entry.name + " "
-            for entry in os.scandir(".")
-            if entry.name.startswith(prefix) and entry.is_file()
+            path_prefix + entry.name + " "
+            for entry in os.scandir(directory)
+            if entry.name.startswith(filename_prefix) and entry.is_file()
         ]
     except OSError:
         return []
