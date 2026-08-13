@@ -38,7 +38,10 @@ def _complete_builtin(text: str, state: int) -> str | None:
         command = command_words[0] if command_words else None
 
         if command in COMPLETERS:
-            _completion_matches = _completer_completions(COMPLETERS[command])
+            previous_word = command_words[-1] if len(command_words) > 1 else ""
+            _completion_matches = _completer_completions(
+                COMPLETERS[command], command, text, previous_word
+            )
             # A broken completer should not disable the shell's normal Tab
             # behavior for that command.
             if not _completion_matches:
@@ -53,11 +56,13 @@ def _complete_builtin(text: str, state: int) -> str | None:
     return _completion_matches[state]
 
 
-def _completer_completions(script: str) -> list[str]:
-    """Run a registered completer and turn its stdout lines into candidates."""
+def _completer_completions(
+    script: str, command: str, current_word: str, previous_word: str
+) -> list[str]:
+    """Run a completer with the command, current word, and previous word."""
     try:
         completed = subprocess.run(
-            [script],
+            [script, command, current_word, previous_word],
             capture_output=True,
             text=True,
             check=False,
